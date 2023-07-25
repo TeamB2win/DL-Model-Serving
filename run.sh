@@ -1,4 +1,4 @@
-#!bin/sh
+#!bin/bash
 
 # Declares the variables required to run the application
 export PYTHONPATH="$(pwd)"
