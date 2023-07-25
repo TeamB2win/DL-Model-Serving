@@ -12,12 +12,17 @@ class BackgroundTasks(threading.Thread):
   def run(self, *arg, **kwargs):
     while True:
       while not QUEUE.empty():
-        # TODO: 추론 코드
         q = QUEUE.get()
+        
+        # TODO: 추론 코드
+        
         time.sleep(10)
         print(q)
         print("task_run")
-        print()    
+        print()  
+          
+        # TODO: Backend로 비디오주소 포함 request
+    # Thread 종료 조건
     
 
 def create_start_app_handler(
