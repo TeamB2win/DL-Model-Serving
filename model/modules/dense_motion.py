@@ -1,9 +1,12 @@
+import math
+
+import torch
 from torch import nn
 import torch.nn.functional as F
-import torch
-from modules.util import Hourglass, AntiAliasInterpolation2d, make_coordinate_grid, kp2gaussian
-from modules.util import to_homogeneous, from_homogeneous, UpBlock2d, TPS
-import math
+
+from model.modules.util import Hourglass, AntiAliasInterpolation2d, make_coordinate_grid, kp2gaussian
+from model.modules.util import to_homogeneous, from_homogeneous, UpBlock2d, TPS
+
 
 class DenseMotionNetwork(nn.Module):
     """

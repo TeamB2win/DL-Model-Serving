@@ -1,23 +1,6 @@
-from pydantic import BaseModel
 from queue import PriorityQueue
-
-
-class RequestData(BaseModel):
-  id: str
-  type: int | None = 3
-  image_path: str
-  reinference: int | None = 0
-  video_path: str | None = ""
-  
-  def __eq__(self, other):
-    if isinstance(other, RequestData):
-      return self.image_path == other.image_path
-  
-    return False
-  
-  def set_video_path(self, path: str):
-    self.video_path = path
-  
+from schema.request_data import RequestData 
+ 
   
 class InferenceQueue(PriorityQueue):
   def __init__(self):
