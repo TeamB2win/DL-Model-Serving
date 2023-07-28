@@ -12,23 +12,22 @@ def do_inference():
     data = data[1]
     
     result = dl_model.inference(data) # 비디오 생성
+    print(result)
     
-    # 비디오 생성 완료
-    if result['result']:
-      # Backend api request
-      if data.prev_driving_path == "":
-        response = fetch('post', result['data'])
-      else:
-        response = fetch('put', result['data'])
-      
-    # 비디오 생성 실패
-    if not result['result'] or response.status != 200:
-      data_priority_queue.put((4, data))  # 우선순위 큐에 가장 낮은 우선순위로 추가
+    # Backend api request
+    if data.prev_driving_path == "":
+      response = fetch('post', result)
+    else:
+      response = fetch('put', result)
+    print(response)
+        
+    if not result['isErr']:
+      ...
+      # if response.status == 400:
+        # data_priority_queue.put((4, data))  # 큐에 가장 낮은 우선순위로 추가
     
-    # TODO 응답을 받아서 다시 추론하거나 등등 처리
-
 def fetch(method, data):
-  url = '63.35.31.27:8000/dl'
+  url = 'http://63.35.31.27:8000/dl'
   if method == 'post':
     response = requests.post(url, json=data)
   else:

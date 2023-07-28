@@ -76,8 +76,9 @@ class DLModelHandler(ModelHandler):
     
   def inference(self, data: RequestData) -> dict:
     ret = {
-      'result': False,
-      'data': {}
+      'id': data.id,
+      'isErr': False,
+      'errMsg': ""
     }
     output_paths = [] # 만들어진 동영상들의 path를 저장하는 리스트
     
@@ -85,7 +86,12 @@ class DLModelHandler(ModelHandler):
     source_image_path = data.image_path
     source_image = self.preprocess_source(source_image_path)
     print("Getting source image from", source_image_path)
-    
+    # Except Can't get 
+    if source_image is None:
+      ret['isErr'] = True
+      ret['errMsg'] = "Fail to get the source image"      
+      return ret
+      
     # 이전 생성된 driving video를 제외한 나머지 비디오만 추론
     driving_video_paths = self.video_paths
     if data.prev_driving_path != "":
@@ -105,6 +111,10 @@ class DLModelHandler(ModelHandler):
         # Preprocess driving video
         driving_video, fps = self.preprocess_driving_video(driving_video_path)
         print("Getting driving video from", driving_video_path)
+        if driving_video is None:
+          ret['isErr'] = True
+          ret['errMsg'] = "Fail to get the drving video"
+          return ret
         
         if self.predict_mode == 'relative' and self.best_frame:
           # driving video에서 source image와 가장 잘 맞는 프레임을 찾는다.
@@ -175,8 +185,9 @@ class DLModelHandler(ModelHandler):
         for path in output_paths:
           if os.path.exists(path):
             os.remove(path)
-        ret['result'] = False
-
+        
+        ret['isErr'] = True
+        ret['errMsg'] = "Fail to create animation"
         return ret
           
     # 만들어진 동영상 중 평가지표 계산
@@ -184,10 +195,8 @@ class DLModelHandler(ModelHandler):
     self.postprocess(remove_idxs, output_paths)
     
     # 평가 지표가 가장 높은 비디오 path 저장
-    ret['result'] = True
-    ret['data']['id'] = data.id
-    ret['data']['prev_driving_path'] = driving_video_paths[best_index]
-    ret['data']['video_path'] = output_paths[best_index]
+    ret['videoSource'] = driving_video_paths[best_index]
+    ret['video'] = output_paths[best_index]
     
     return ret
   
