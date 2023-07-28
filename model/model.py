@@ -39,7 +39,7 @@ class DLModelHandler(ModelHandler):
     # 저장할 위치
     self.output_path = '/workspace/data/video'
     
-  def preprocess_source(self, image_path: str) -> np.ndarray:
+  def preprocess_source(self, image_path: str) -> np.ndarray | None:
     # Load the source image
     try:
       source_image = imageio.imread(image_path)
@@ -50,9 +50,11 @@ class DLModelHandler(ModelHandler):
       return source
     # 예외 처리 필요
     except:
-      raise 
+      print("Occur Error during preprocessing the source image")
+      return None
       
-  def preprocess_driving_video(self, video_path: str) -> list[np.ndarray]:
+  def preprocess_driving_video(self, video_path: str) -> list[np.ndarray | None]:
+    try:
       reader = imageio.get_reader(video_path)
       fps = reader.get_meta_data()['fps']
       driving_video = []
@@ -68,18 +70,32 @@ class DLModelHandler(ModelHandler):
 
       return driving, fps
     
-  def inference(self, data: RequestData) -> RequestData:
-    # 만들어진 동영상들의 path를 저장하는 리스트
-    output_paths = []
+    except:
+      print("Occur Error during preprocessing driving video")
+      return None, None
+    
+  def inference(self, data: RequestData) -> dict:
+    ret = {
+      'result': False,
+      'data': {}
+    }
+    output_paths = [] # 만들어진 동영상들의 path를 저장하는 리스트
     
     # Preprocess source image
     source_image_path = data.image_path
     source_image = self.preprocess_source(source_image_path)
+    print("Getting source image from", source_image_path)
     
+    # 이전 생성된 driving video를 제외한 나머지 비디오만 추론
+    driving_video_paths = self.video_paths
+    if data.prev_driving_path != "":
+      driving_video_paths = [driving_video_path for driving_video_path in driving_video_paths 
+                             if driving_video_path != data.prev_driving_path] 
+
     video_index = 0
     video_performance = pd.DataFrame(columns=['fvd', 'aed'])
     
-    for video_path in self.video_paths:
+    for driving_video_path in driving_video_paths:
       try:
         # Create video path
         video_name = f'generated_from_{data.id}_{video_index}'
@@ -87,7 +103,6 @@ class DLModelHandler(ModelHandler):
         output_path = os.path.join(self.output_path, m.hexdigest() + '.mp4')
 
         # Preprocess driving video
-        driving_video_path = video_path
         driving_video, fps = self.preprocess_driving_video(driving_video_path)
         print("Getting driving video from", driving_video_path)
         
@@ -95,6 +110,7 @@ class DLModelHandler(ModelHandler):
           # driving video에서 source image와 가장 잘 맞는 프레임을 찾는다.
           i = self.find_best_frame(source_image, driving_video)
           print ("Best frame: " + str(i))
+          print(f"Getting start make animation using best frame {self.best_frame} video index {video_index}")
           driving_forward = driving_video[i:]               # 기준 프레임 뒷 부분 순방향으로 예측
           driving_backward = driving_video[:(i + 1)][::-1]  # 기준 프레이 앞 부분 역방향으로 예측
           predictions_forward = self.make_animation(
@@ -121,6 +137,7 @@ class DLModelHandler(ModelHandler):
           del predictions_forward
           
         else:
+          print(f"Getting start make animation using best frame {self.best_frame} video index {video_index}")
           predictions = self.make_animation(
             source_image,
             driving_video,
@@ -154,20 +171,30 @@ class DLModelHandler(ModelHandler):
         del predictions
     
       except:
-        if os.path.exists(output_path):
-          os.remove(output_path)
+        print("Occur Error for inference!!")
+        for path in output_paths:
+          if os.path.exists(path):
+            os.remove(path)
+        ret['result'] = False
+
+        return ret
           
     # 만들어진 동영상 중 평가지표 계산
     best_index, remove_idxs = self.calculate_metrix(video_performance)
     self.postprocess(remove_idxs, output_paths)
     
     # 평가 지표가 가장 높은 비디오 path 저장
-    data.set_video_path(output_paths[best_index])
-    # setattr(data, video_path, output_paths[best_index])
+    ret['result'] = True
+    ret['data']['id'] = data.id
+    ret['data']['prev_driving_path'] = driving_video_paths[best_index]
+    ret['data']['video_path'] = output_paths[best_index]
     
-    return data
+    return ret
   
   def postprocess(self, remove_idxs, output_paths) -> None:
     # 만들어진 동영상 삭제
+    print("Running postprocess")
     for i in list(remove_idxs):
-      os.remove(output_paths[i])
+      if os.path.exists(output_paths[i]):
+        print(f"Delete created Video Path: {output_paths[i]}")
+        os.remove(output_paths[i])

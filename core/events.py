@@ -5,8 +5,7 @@ from typing import Callable
 from fastapi import FastAPI
 
 from config.app import AppSetting
-from api.routes.inference import do_inference
-
+from core.background_task import do_inference
 
 running = True
 
@@ -41,6 +40,5 @@ def create_stop_app_handler(
     running = False
     time.sleep(1)
     # TODO: DL 모델 GPU 메모리 상에서 삭제
-    ...
     
   return stop_app
