@@ -2,9 +2,9 @@ from pydantic import BaseModel
 
 
 class RequestData(BaseModel):
-  id: str
-  type: int | None = 3
+  id: int
   image_path: str
+  wanted_type: bool
   prev_driving_path: str | None = ""
   video_path: str | None = ""
   

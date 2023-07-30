@@ -229,7 +229,7 @@ class ModelHandler:
     df['fvd_standardized'] = scaler.fit_transform(df[['fvd']])  # FVD 열을 표준화하여 새로운 열로 추가
     df['aed_standardized'] = scaler.fit_transform(df[['aed']])  # AED 열을 표준화하여 새로운 열로 추가
     # 평가지표 생성
-    df['fvd_aed'] = abs(df['fvd_standardized']) + abs(df['aed_standardized'])
+    df['fvd_aed'] = df['fvd_standardized'] + df['aed_standardized'] * 1.5
     # df.to_csv('/eval_video/test_performance.csv', index=True)
     best_index = df.sort_values(by=['fvd_aed'], ascending=[True]).index[0]
 
