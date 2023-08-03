@@ -2,48 +2,59 @@ import os
 import cv2
 import imageio
 
-from fastapi import APIRouter
-from fastapi.responses import HTMLResponse
-from starlette.status import HTTP_200_OK, HTTP_208_ALREADY_REPORTED, HTTP_500_INTERNAL_SERVER_ERROR
+from fastapi import APIRouter, status
 
-from schema.priority_queue import InferenceQueue, RequestData
+from api.errors.http_errors import HTTP_Exception
+from schema.priority_queue import InferenceQueue
+from schema.inference_schema import *
+from resource.strings import DESCRIPTION_400_ERROR_FOR_DATA_FILE
 
 
 data_priority_queue = InferenceQueue()
 
+ImagePathException = HTTP_Exception(
+  status_code=status.HTTP_400_BAD_REQUEST,
+  description=DESCRIPTION_400_ERROR_FOR_DATA_FILE,
+  detail="Can't access the image path"
+)
+ImageOpenException = HTTP_Exception(
+    status_code=status.HTTP_400_BAD_REQUEST,
+    description=DESCRIPTION_400_ERROR_FOR_DATA_FILE,
+    detail="Can't open image by using image framework(imageio or cv2)"
+)
+
 router = APIRouter(prefix="/api", tags=["api"])
 
-@router.post("/inference")
-async def add_data(data: RequestData):
+@router.post(
+  path="/inference",
+  response_model=InferenceResponse,
+  responses={
+    **ImagePathException.responses,
+    **ImageOpenException.responses
+  },
+  name="inference: insert data into inference queue"
+)
+async def add_data(data: InferenceRequest) -> InferenceResponse:
   # 추론 큐에 데이터가 존재하는 지 확인
   if data in data_priority_queue: 
-    print("already exsist data in Inference Queue")
-    return HTMLResponse(
-      content="Already",
-      status_code=HTTP_208_ALREADY_REPORTED
+    print("already exist in the inference queue")
+    return InferenceResponse(
+      message="already exist in the inference queue",
+      status="OK"
     )
 
   # image path 유효성 검사
   if not os.path.exists(data.image_path):
-    return HTMLResponse(
-      content="Invalid Image Path",
-      status_code=HTTP_500_INTERNAL_SERVER_ERROR
-    )
+    ImagePathException.error_raise()
     
   # image file을 열 수 있는지 검사 
   try:
     imageio.imread(data.image_path)
     cv2.imread(data.image_path)
   except:
-    return HTMLResponse(
-      content="Invalid Image Path",
-      status_code=HTTP_500_INTERNAL_SERVER_ERROR
-    )
+    ImageOpenException.error_raise()
     
   # Enqueue the data into the priority queue with the calculated priority
-  data_priority_queue.put((data.type, data))  # 큐에 데이터 추가
-    
-  return HTMLResponse(
-    content="OK",
-    status_code=HTTP_200_OK
-  )
+  data_priority_queue.put((data.wanted_type - 1, data))  # 큐에 데이터 추가
+  
+  return InferenceResponse()
