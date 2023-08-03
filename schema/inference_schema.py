@@ -7,8 +7,8 @@ class InferenceRequest(BaseSchemaModel):
   id: int
   image_path: str
   wanted_type: bool
-  prev_driving_path: str | None = ""
-  video_path: str | None = ""
+  prev_driving_path: str | None = None
+  video_path: str | None = None
   
   def __eq__(self, other):
     if isinstance(other, InferenceRequest):
