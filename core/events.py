@@ -7,6 +7,7 @@ from fastapi import FastAPI
 from config.app import AppSetting
 from core.background_task import do_inference
 
+
 running = True
 
 class BackgroundTasks(threading.Thread):
