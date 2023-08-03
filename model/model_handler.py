@@ -9,7 +9,6 @@ import torch.nn as nn
 import numpy as np
 from scipy.spatial import ConvexHull
 from sklearn.preprocessing import StandardScaler
-from tqdm import tqdm
 
 from model.modules.inpainting_network import InpaintingNetwork
 from model.modules.keypoint_detector import KPDetector
@@ -122,7 +121,7 @@ class ModelHandler:
     kp_source = normalize_kp(kp_source)
     norm  = float('inf')
     frame_num = 0
-    for i, image in tqdm(enumerate(driving)):
+    for i, image in enumerate(driving):
         try:
             kp_driving = fa.get_landmarks(255 * image)[0]
             kp_driving = normalize_kp(kp_driving)
@@ -233,4 +232,5 @@ class ModelHandler:
     # df.to_csv('/eval_video/test_performance.csv', index=True)
     best_index = df.sort_values(by=['fvd_aed'], ascending=[True]).index[0]
 
-    return best_index, list(df.drop(best_index).index)
+    return best_index
+  # , list(df.drop(best_index).index)
