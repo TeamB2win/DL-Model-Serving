@@ -8,7 +8,6 @@ import torchvision.models as models
 import torch.nn as nn
 import numpy as np
 from scipy.spatial import ConvexHull
-from sklearn.preprocessing import StandardScaler
 
 from model.modules.inpainting_network import InpaintingNetwork
 from model.modules.keypoint_detector import KPDetector
@@ -30,6 +29,10 @@ class ModelHandler:
         transforms.Resize((299, 299)),
         transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
     ])
+
+    self.psnr_decay = 1
+    self.fvd_decay = 1
+    self.aed_decay = 1
 
   def load_checkpoints(self):
     """Pretrained 된 모델 가중치 불러오기"""
@@ -144,7 +147,7 @@ class ModelHandler:
     cap.release()
     return frames
 
-  def create_inception_embedding(self, video_path, batch_size=32):
+  def create_inception_embedding(self, frames, batch_size=32):
     # InceptionV3 모델 불러오기
     model = models.inception_v3()
     model.load_state_dict(torch.load(self.inception_path))
@@ -156,8 +159,8 @@ class ModelHandler:
     model.to(self.device)
     model.eval()
     
+    # frames = self.extract_frames_from_video(video_path)
     video_data = []
-    frames = self.extract_frames_from_video(video_path)
     for frame in frames:
         video_data.append(self.transform(frame))
 
@@ -176,19 +179,25 @@ class ModelHandler:
     
     return video_embedding
   
-  def calculate_fvd(self, video1_path, video2_path):
-    video1_embedding = self.create_inception_embedding(video1_path)
-    video2_embedding = self.create_inception_embedding(video2_path)
+  def calculate_fvd(self, actual_frames: np.ndarray, predicted_frames: np.ndarray) -> float:
+    video1_embedding = self.create_inception_embedding(actual_frames)
+    video2_embedding = self.create_inception_embedding(predicted_frames)
 
     # FVD 계산
     fvd = np.linalg.norm(video1_embedding - video2_embedding)
     return fvd
 
 
-  def calculate_aed(self, image_path, video_path, pixel=256):
-    # 프레임별로 변환된 이미지들을 리스트로 얻습니다.
-    frames_list = self.extract_frames_from_video(video_path)
+  def calculate_aed(
+    self, 
+    image: np.ndarray, 
+    video_frames: np.ndarray, 
+  ) -> float:
+    assert image.shape == video_frames.shape[1:], "Shapes of actual_frames and predicted_frames must be the same"
 
+    # 프레임별로 변환된 이미지들을 리스트로 얻습니다.
+    # frames_list = self.extract_frames_from_video(video_path)
+    
     # 리스트의 길이(프레임 수)를 확인해봅니다.
     # print("총 프레임 수:", len(frames_list))
 
@@ -199,16 +208,16 @@ class ModelHandler:
       euclidean_distance = np.sqrt(sum_squared_diff / image1.size)
       return euclidean_distance
 
-    def calculate_average_euclidean_distance(path, frames_list):
+    def calculate_average_euclidean_distance(image, frames_list):
       total_distance = 0.0
 
       # 리스트의 첫 번째 이미지를 기준 이미지로 설정합니다.
-      reference_image = cv2.imread(path)
-      resized_image = cv2.resize(reference_image, (pixel, pixel))
-      resized_image_rgb = cv2.cvtColor(resized_image, cv2.COLOR_BGR2RGB)  # OpenCV의 BGR 형식을 RGB로 변환
+      # reference_image = cv2.imread(path)
+      # resized_image = cv2.resize(reference_image, (pixel, pixel))
+      # resized_image_rgb = cv2.cvtColor(resized_image, cv2.COLOR_BGR2RGB)  # OpenCV의 BGR 형식을 RGB로 변환
       
       for frame in frames_list:
-          distance = calculate_euclidean_distance(resized_image_rgb, frame)
+          distance = calculate_euclidean_distance(image, frame)
           total_distance += distance
 
       # 이미지의 개수로 나눠서 평균을 계산합니다.
@@ -217,20 +226,54 @@ class ModelHandler:
 
     # frames_list는 앞서 생성한 이미지 프레임들의 리스트입니다.
     # 이미지 간의 평균 유클리드 거리를 구합니다.
-    aed = calculate_average_euclidean_distance(image_path, frames_list)
+    aed = calculate_average_euclidean_distance(image, video_frames)
     
     return aed
 
-  def calculate_metrix(self, df):
-    # 표준화 객체 생성
-    scaler = StandardScaler()
-    
-    df['fvd_standardized'] = scaler.fit_transform(df[['fvd']])  # FVD 열을 표준화하여 새로운 열로 추가
-    df['aed_standardized'] = scaler.fit_transform(df[['aed']])  # AED 열을 표준화하여 새로운 열로 추가
-    # 평가지표 생성
-    df['fvd_aed'] = df['fvd_standardized'] + df['aed_standardized'] * 1.5
-    # df.to_csv('/eval_video/test_performance.csv', index=True)
-    best_index = df.sort_values(by=['fvd_aed'], ascending=[True]).index[0]
+  def _calculate_psnr(self, original: np.ndarray , generated: np.ndarray):
+    mse = np.mean((original - generated) ** 2)
+    max_pixel = np.max(original)
+    psnr = 20 * np.log10(max_pixel / np.sqrt(mse))
+    return psnr
+  
+  def calculate_psnr(
+    self, 
+    actual_frames: np.ndarray, 
+    predicted_frames: np.ndarray
+  ) -> float:    
+    # Calculate PSNR for each frame pair
+    # Make sure the shapes of actual_frames and predicted_frames are the same
+    assert actual_frames.shape[1:] == predicted_frames.shape[1:], "Shapes of actual_frames and predicted_frames must be the same"
 
-    return best_index
-  # , list(df.drop(best_index).index)
+    num_frames = actual_frames.shape[0]
+
+    # Calculate PSNR for each frame pair
+    psnr_total = 0.0
+    for i in range(num_frames):
+        actual_frame = actual_frames[i]
+        predicted_frame = predicted_frames[i]
+        psnr_value = self._calculate_psnr(actual_frame, predicted_frame)
+        psnr_total += psnr_value
+
+    # Calculate average PSNR for the video pair
+    average_psnr = psnr_total / num_frames
+
+    return average_psnr
+
+  def calculate_metrix(self, scores: list) -> int:
+    # 3번째 열 psnr의 값을 정규화를 위해 전부 음수로 변환함.
+    scores = np.array(scores)
+    scores[:, 2] = -scores[:, 2]
+
+    # Step 1: 열별로 평균과 표준편차를 계산합니다.
+    mean = np.mean(scores, axis=0)
+    std = np.std(scores, axis=0)
+
+    # Step 2: 각 원소에서 해당 열의 평균을 빼고, 열의 표준편차로 나누어 정규화합니다.
+    normalized = (scores - mean) / std
+    
+    result_performance = []
+    for i in range(len(scores)):
+      result_performance.append(sum(normalized[i]))
+
+    return np.argmin(result_performance)

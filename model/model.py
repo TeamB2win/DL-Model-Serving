@@ -2,10 +2,10 @@
 import os
 import hashlib
 import shutil
+from typing import Any
 
 import imageio
 import numpy as np
-import pandas as pd
 from skimage import img_as_ubyte
 from skimage.transform import resize
 import torch
@@ -38,27 +38,27 @@ class DLModelHandler(ModelHandler):
     self.video_paths = [os.path.join(self.driving_root, file_name) for file_name in os.listdir(self.driving_root)]
 
     # 저장할 위치
-    self.output_path = '/workspace/data/video'
-    self.working_dir = '/workspace/temp'
+    self.output_path = os.environ['VIDEO_DIR']
+    self.working_dir = os.environ['WORKING_DIR']
     
-  def preprocess_source(self, image_path: str) -> np.ndarray | None:
-    # Load the source image
-    try:
+  def preprocess_source(self, image_path: str) -> torch.Tensor | None:
+    try: # Load the source image
       source_image = imageio.imread(image_path)
       source_image = resize(source_image, (self.pixel, self.pixel))[..., :3]
       source = torch.tensor(source_image[np.newaxis].astype(np.float32)).permute(0, 3, 1, 2)
       source = source.to(self.device)
-      
+
       return source
-    # 예외 처리 필요
+    
     except:
       print("Occur Error during preprocessing the source image")
       return None
       
-  def preprocess_driving_video(self, video_path: str) -> list[torch.Tensor | None]:
+  def preprocess_driving_video(self, video_path: str) -> list[torch.Tensor | Any | None]:
     try:
       reader = imageio.get_reader(video_path)
       fps = reader.get_meta_data()['fps']
+
       driving_video = []
       try:
         for im in reader:
@@ -67,8 +67,11 @@ class DLModelHandler(ModelHandler):
         pass
 
       reader.close()    
+      
       driving_video = [resize(frame, (self.pixel, self.pixel))[..., :3] for frame in driving_video]
-      driving = torch.tensor(np.array(driving_video)[np.newaxis].astype(np.float32)).permute(0, 4, 1, 2, 3).to(self.device)
+      driving = torch.tensor(
+        np.array(driving_video)[np.newaxis].astype(np.float32)
+      ).permute(0, 4, 1, 2, 3).to(self.device)
 
       return driving, fps
     
@@ -83,12 +86,15 @@ class DLModelHandler(ModelHandler):
       'err_msg': None
     }
     output_paths = [] # working storage 저장 리스트
+    video_performance = [] # 생성된 비디오 평가지표 저장
+    # video_performance = pd.DataFrame(columns=['fvd', 'aed'])
 
     # Preprocess source image
     source_image_path = data.image_path
     source_image = self.preprocess_source(source_image_path)
     print("Getting source image from", source_image_path)
-    # Except Can't get the source image
+    
+    # Except Can't get the source image    
     if source_image is None:
       ret['is_err'] = True
       ret['err_msg'] = "Fail to get the source image"      
@@ -100,12 +106,9 @@ class DLModelHandler(ModelHandler):
       driving_video_paths = [driving_video_path for driving_video_path in driving_video_paths 
                              if driving_video_path != data.prev_driving_path] 
 
-    video_index = 0
-    video_performance = pd.DataFrame(columns=['fvd', 'aed'])
-    
     for idx, driving_video_path in enumerate(driving_video_paths):
       # Create video path
-      m = hashlib.sha256(f'generated_from_{data.id}_{video_index}'.encode('utf-8'))
+      m = hashlib.sha256(f'generated_from_{data.id}_{idx}'.encode('utf-8'))
       video_name = m.hexdigest() + '.mp4'
       output_path = os.path.join(self.working_dir, video_name)
 
@@ -130,37 +133,46 @@ class DLModelHandler(ModelHandler):
         ret['is_err'] = True
         ret['err_msg'] = "Fail to create animation"
         return ret
-      
+
       try:
         # save resulting video
         imageio.mimsave(output_path, [img_as_ubyte(frame) for frame in predictions], fps=fps)
         output_paths.append(output_path)
+        print(output_path, 'create completed')
 
-        # 디버깅 확인용 출력
-        print(output_path, 'create completed!')
-
-        # FVD 계산 실행
-        fvd_result = self.calculate_fvd(driving_video_path, output_path)
-        print("FVD:", fvd_result)
+        np_pred = np.array(predictions)
+        np_driving = driving_video.cpu().clone().squeeze(0).detach().numpy().transpose((1, 2, 3, 0))
+        np_source = source_image.cpu().clone().squeeze(0).detach().numpy().transpose((1, 2, 0))
         
-        # AED 계산 실행
-        aed_result = self.calculate_aed(source_image_path, output_path) # 원본이미지 경로
-        print("AED:", aed_result)
-        
-        video_performance.loc[video_index] = [fvd_result, aed_result]
+        # PSNR 계산 
+        psnr_result = self.calculate_psnr(np_driving, np_pred)
+        print(f"PSNR: {psnr_result}")        
 
-        video_index += 1
+        # FVD 계산
+        fvd_result = self.calculate_fvd(np_driving, np_pred)
+        print(f"FVD: {fvd_result}")
+        
+        # AED 계산
+        aed_result = self.calculate_aed(np_source, np_pred)
+        print(f"AED: {aed_result}")
+        
+        # video_performance.loc[idx] = [fvd_result, aed_result]
+        video_performance.append([fvd_result, aed_result, psnr_result])
+        
         # delete created video in GPU
         del predictions
+      
       except:
         print("Occur Error for curculate metrix!!")
         if idx != len(driving_video_paths) - 1:
+          if os.path.exists(output_path):
+            os.remove(output_path)
           continue
                 
         ret['is_err'] = True
         ret['err_msg'] = "Fail to curculate metrix"
         return ret
-          
+
     # 만들어진 동영상 중 평가지표 계산
     best_idx = self.calculate_metrix(video_performance)
     video_path = self.postprocess(best_idx, output_paths)
