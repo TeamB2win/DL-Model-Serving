@@ -8,7 +8,7 @@ from core.utils import clear_working_dir
 dl_model = DLModelHandler()
 
 def do_inference():
-  while not data_priority_queue.empty():
+  if not data_priority_queue.empty():
     print(f"========= Getting start inference =========")    
     print(f"current items in inference queue: {data_priority_queue.qsize()}")
     
