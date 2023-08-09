@@ -2,6 +2,7 @@
 import os
 import hashlib
 import shutil
+from datetime import datetime
 from typing import Any
 
 import imageio
@@ -83,7 +84,15 @@ class DLModelHandler(ModelHandler):
     ret = {
       'id': data.id,
       'is_err': False,
-      'err_msg': None
+      'err_msg': None,
+    }
+    
+    performance = {
+      'driving_videos': [],
+      'fvd': [],
+      'aed': [],
+      'psnr': [],
+      'video_path': [],
     }
     output_paths = [] # working storage 저장 리스트
     video_performance = [] # 생성된 비디오 평가지표 저장
@@ -104,11 +113,12 @@ class DLModelHandler(ModelHandler):
     driving_video_paths = self.video_paths
     if data.prev_driving_path != "":
       driving_video_paths = [driving_video_path for driving_video_path in driving_video_paths 
-                             if driving_video_path != data.prev_driving_path] 
-
+                             if driving_video_path != data.prev_driving_path]
+    
+    curtime = datetime.now().strftime("%Y%m%d%H%M%S")
     for idx, driving_video_path in enumerate(driving_video_paths):
       # Create video path
-      m = hashlib.sha256(f'generated_from_{data.id}_{idx}'.encode('utf-8'))
+      m = hashlib.sha256(f'{curtime}_generated_from_{data.id}_{idx}'.encode('utf-8'))
       video_name = m.hexdigest() + '.mp4'
       output_path = os.path.join(self.working_dir, video_name)
 
@@ -118,8 +128,14 @@ class DLModelHandler(ModelHandler):
 
       if driving_video is None:
         print(f"Fail to get the drving video {driving_video_path}")
-        continue
-
+        if idx != len(driving_video_paths) - 1:
+          continue
+        
+        if len(output_paths) == 0:
+          ret['is_err'] = True
+          ret['err_msg'] = "Fail to load driving video"
+          return ret
+      
       # 추론 시작
       predictions = self._inference_use_best_frame(source_image, driving_video)
       if predictions is None:
@@ -130,16 +146,17 @@ class DLModelHandler(ModelHandler):
           continue
         
         # 모든 driving video에 대한 추론 실패
-        ret['is_err'] = True
-        ret['err_msg'] = "Fail to create animation"
-        return ret
+        if len(output_paths) == 0:
+          ret['is_err'] = True
+          ret['err_msg'] = "Fail to create animation"
+          return ret
 
       try:
         # save resulting video
         imageio.mimsave(output_path, [img_as_ubyte(frame) for frame in predictions], fps=fps)
         output_paths.append(output_path)
         print(output_path, 'create completed')
-
+        
         np_pred = np.array(predictions)
         np_driving = driving_video.cpu().clone().squeeze(0).detach().numpy().transpose((1, 2, 3, 0))
         np_source = source_image.cpu().clone().squeeze(0).detach().numpy().transpose((1, 2, 0))
@@ -147,16 +164,20 @@ class DLModelHandler(ModelHandler):
         # PSNR 계산 
         psnr_result = self.calculate_psnr(np_driving, np_pred)
         print(f"PSNR: {psnr_result}")        
-
+        
         # FVD 계산
         fvd_result = self.calculate_fvd(np_driving, np_pred)
         print(f"FVD: {fvd_result}")
-        
+                
         # AED 계산
         aed_result = self.calculate_aed(np_source, np_pred)
         print(f"AED: {aed_result}")
-        
-        # video_performance.loc[idx] = [fvd_result, aed_result]
+
+        performance['video_path'].append(output_path)
+        performance['driving_videos'].append(driving_video_path)
+        performance['psnr'].append(psnr_result)
+        performance['fvd'].append(fvd_result)
+        performance['aed'].append(aed_result)
         video_performance.append([fvd_result, aed_result, psnr_result])
         
         # delete created video in GPU
@@ -168,19 +189,29 @@ class DLModelHandler(ModelHandler):
           if os.path.exists(output_path):
             os.remove(output_path)
           continue
-                
-        ret['is_err'] = True
-        ret['err_msg'] = "Fail to curculate metrix"
-        return ret
+        
+        if len(output_paths) == 0:
+          ret['is_err'] = True
+          ret['err_msg'] = "Fail to curculate metrix"
+          return ret
 
     # 만들어진 동영상 중 평가지표 계산
     best_idx = self.calculate_metrix(video_performance)
+
+    performance['video_performance'] = video_performance
+    performance['best_idx'] = best_idx
+    
     video_path = self.postprocess(best_idx, output_paths)
     
-    # 평가 지표가 가장 높은 비디오 path 저장
+    # # 평가 지표가 가장 높은 비디오 path 저장
     ret['driving_video'] = driving_video_paths[best_idx]
     ret['video'] = video_path
-    
+        
+    result_path = os.path.join('/workspace/result_logs', f'{data.id}_result.txt')    
+    with open(result_path, 'w') as file:
+      import json
+      file.write(json.dumps(performance, indent='\t'))
+      
     return ret
   
   def postprocess(self, best_idx: int, output_paths: list[str]) -> str:

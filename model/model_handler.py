@@ -124,7 +124,7 @@ class ModelHandler:
     kp_source = normalize_kp(kp_source)
     norm  = float('inf')
     frame_num = 0
-    for i, image in enumerate(driving):
+    for i, image in enumerate(driving[::2]):
         try:
             kp_driving = fa.get_landmarks(255 * image)[0]
             kp_driving = normalize_kp(kp_driving)
@@ -185,7 +185,7 @@ class ModelHandler:
 
     # FVD 계산
     fvd = np.linalg.norm(video1_embedding - video2_embedding)
-    return fvd
+    return float(fvd)
 
 
   def calculate_aed(
@@ -228,7 +228,7 @@ class ModelHandler:
     # 이미지 간의 평균 유클리드 거리를 구합니다.
     aed = calculate_average_euclidean_distance(image, video_frames)
     
-    return aed
+    return float(aed)
 
   def _calculate_psnr(self, original: np.ndarray , generated: np.ndarray):
     mse = np.mean((original - generated) ** 2)
@@ -258,7 +258,7 @@ class ModelHandler:
     # Calculate average PSNR for the video pair
     average_psnr = psnr_total / num_frames
 
-    return average_psnr
+    return float(average_psnr)
 
   def calculate_metrix(self, scores: list) -> int:
     # 3번째 열 psnr의 값을 정규화를 위해 전부 음수로 변환함.
@@ -276,4 +276,4 @@ class ModelHandler:
     for i in range(len(scores)):
       result_performance.append(sum(normalized[i]))
 
-    return np.argmin(result_performance)
+    return int(np.argmin(result_performance))

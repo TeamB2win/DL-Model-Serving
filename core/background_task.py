@@ -32,9 +32,19 @@ def do_inference():
       method = 'post'
     else:
       method = 'put'
-
-    fetch(method, result)
-    print("backend request succeed")
+      
+    try:
+      fetch(method, result)
+      print("backend request succeed")
+    except:
+      print("error")
+      url = os.path.join(os.environ["BACKEND_URL"], 'dl')
+      result = {
+        'id': data.id,
+        'is_err': True,
+        'err_msg': "Fail to result request to backend have to inference again"
+      }
+      requests.post(url, result)
 
     
 def fetch(method, data):

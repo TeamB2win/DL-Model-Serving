@@ -42,8 +42,5 @@ def create_stop_app_handler(
     time.sleep(1)
     
     # clear_working_dir()
-    # TODO: DL 모델 GPU 메모리 상에서 삭제
-    if 'dl_model' in locals() or 'dl_model' in globals():
-      print('yes')
           
   return stop_app
