@@ -11,6 +11,7 @@ from skimage import img_as_ubyte
 from skimage.transform import resize
 import torch
 
+from config.app import get_app_setting
 from model.model_handler import ModelHandler
 from schema.inference_schema import InferenceRequest
 
@@ -24,6 +25,8 @@ class DLModelHandler(ModelHandler):
     self.initialize()
     
   def initialize(self):
+    settings = get_app_setting()
+    
     self.dataset_name = 'vox' # ['vox', 'taichi', 'ted', 'mgif']
     self.predict_mode = 'relative' # ['standard', 'relative', 'avd']
     self.best_frame = True  # when use the relative mode to animate a face, use 'find_best_frame=True' can get better quality result
@@ -39,8 +42,8 @@ class DLModelHandler(ModelHandler):
     self.video_paths = [os.path.join(self.driving_root, file_name) for file_name in os.listdir(self.driving_root)]
 
     # 저장할 위치
-    self.output_path = os.environ['VIDEO_DIR']
-    self.working_dir = os.environ['WORKING_DIR']
+    self.output_path = settings.video_dir
+    self.working_dir = settings.working_dir
     
   def preprocess_source(self, image_path: str) -> torch.Tensor | None:
     try: # Load the source image

@@ -4,24 +4,24 @@ from typing import Callable
 
 from fastapi import FastAPI
 
-from config.app import AppSetting
+from config.app import get_app_setting
 from core.background_task import do_inference
 from core.utils import clear_working_dir
+
 
 running = True
 
 class BackgroundTasks(threading.Thread):
   def run(self, *arg, **kwargs):
     global running
-    
+    settings = get_app_setting  
+      
     while running:
-      do_inference()
-      # TODO: Backend로 비디오주소 포함 request
+      do_inference(settings)
     
 
 def create_start_app_handler(
   app: FastAPI,
-  settings: AppSetting
 ) -> Callable:
   async def start_app() -> None:
     # TODO: GPU 자원을 확인 후 DL모델을 적재
