@@ -30,9 +30,7 @@ class ModelHandler:
         transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
     ])
 
-    self.psnr_decay = 1
-    self.fvd_decay = 1
-    self.aed_decay = 1
+    self.decay = np.array([0.2, 0.5, 0.3])  # FVD, AED, PSNR
 
   def load_checkpoints(self):
     """Pretrained 된 모델 가중치 불러오기"""
@@ -265,15 +263,12 @@ class ModelHandler:
     scores = np.array(scores)
     scores[:, 2] = -scores[:, 2]
 
-    # Step 1: 열별로 평균과 표준편차를 계산합니다.
-    mean = np.mean(scores, axis=0)
-    std = np.std(scores, axis=0)
+    # Step 1: 열별로 최소값과 최대값을 계산
+    min_arr = np.min(scores, axis=0)
+    max_arr = np.max(scores, axis=0)
+    # Step 2: 정규화
+    normalized = (scores - min_arr) / (max_arr - min_arr)
+    # Step 3: 가중합계
+    result = np.sum(self.decay * normalized, axis=1)
 
-    # Step 2: 각 원소에서 해당 열의 평균을 빼고, 열의 표준편차로 나누어 정규화합니다.
-    normalized = (scores - mean) / std
-    
-    result_performance = []
-    for i in range(len(scores)):
-      result_performance.append(sum(normalized[i]))
-
-    return int(np.argmin(result_performance))
+    return int(np.argmin(result))
