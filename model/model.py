@@ -165,7 +165,7 @@ class DLModelHandler(ModelHandler):
         np_source = source_image.cpu().clone().squeeze(0).detach().numpy().transpose((1, 2, 0))
         
         # PSNR 계산 
-        psnr_result = self.calculate_psnr(np_driving, np_pred)
+        psnr_result = self.calculate_psnr(np_pred)
         print(f"PSNR: {psnr_result}")        
         
         # FVD 계산
@@ -243,14 +243,16 @@ class DLModelHandler(ModelHandler):
     source_image: torch.Tensor, 
     driving_video: torch.Tensor, 
   ) -> list | None:
+    """driving_video의 프레임 중 source_image와 가장 유사한 프레임을 기준으로 추론"""
+
     print(f"Getting start make animation using best frame: {self.best_frame}")
     new_source_image = source_image.squeeze(0).permute(1, 2, 0)
+    driving_video_frames = driving_video.squeeze(0).permute(1, 2, 3, 0)
     
     # driving video에서 source image와 가장 잘 맞는 프레임을 찾는다.
     print("Getting start find the best frame from source image to driving video frames")
 
     try: 
-      driving_video_frames = driving_video.squeeze(0).permute(1, 2, 3, 0)
       i = self.find_best_frame(new_source_image, driving_video_frames)
       print ("Best frame: " + str(i))
       del driving_video_frames
@@ -300,6 +302,8 @@ class DLModelHandler(ModelHandler):
     source_image: torch.Tensor,
     driving_video: torch.Tensor
   ) -> list | None:
+    """best frame을 찾지 않고 추론"""
+    
     print(f"Getting start make animation using best frame: False")
     try:
       predictions = self.make_animation(

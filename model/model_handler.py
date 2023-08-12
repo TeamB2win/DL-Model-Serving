@@ -1,7 +1,6 @@
 import sys
 import yaml
 
-import cv2
 import torch
 import torchvision.transforms as transforms
 import torchvision.models as models
@@ -78,7 +77,14 @@ class ModelHandler:
     return kp_new
 
   def make_animation(self, source, driving, inpainting_network, kp_detector, dense_motion_network, avd_network, mode='relative'):
+    """비디오 생성하기
+
+    param: 
+      source: B * C * W * H
+      driving: B * C * F * W * H
+    """
     assert mode in ['standard', 'relative', 'avd']
+    
     with torch.no_grad():
         predictions = []
         kp_source = kp_detector(source)
@@ -105,6 +111,12 @@ class ModelHandler:
     return predictions
 
   def find_best_frame(self, source, driving):
+    """driving video 프레임 중 source와 key point가 가장 유사한 프레임을 찾기
+
+    param: 
+      source: W * H * C
+      driving: F * W * H * C
+    """
     import face_alignment
 
     def normalize_kp(kp):
@@ -133,19 +145,9 @@ class ModelHandler:
         except:
             pass
     return frame_num
-  
-  def extract_frames_from_video(self, video_path):
-    frames = []
-    cap = cv2.VideoCapture(video_path)
-    while True:
-        ret, frame = cap.read()
-        if not ret:
-            break
-        frames.append(frame)
-    cap.release()
-    return frames
 
   def create_inception_embedding(self, frames, batch_size=32):
+    """inceptionNet-v3 모델을 통해 featuremap으로 변환"""
     # InceptionV3 모델 불러오기
     model = models.inception_v3()
     model.load_state_dict(torch.load(self.inception_path))
@@ -157,16 +159,15 @@ class ModelHandler:
     model.to(self.device)
     model.eval()
     
-    # frames = self.extract_frames_from_video(video_path)
     video_data = []
     for frame in frames:
-        video_data.append(self.transform(frame))
+        video_data.append(self.transform(frame))    # InceptionV3의 입력 전처리
 
     video_embedding = []
     with torch.no_grad():
         for i in range(0, len(video_data), batch_size):
             batch_data = video_data[i:i+batch_size]
-            batch_data = torch.stack(batch_data).to(self.device)  # InceptionV3의 입력 전처리
+            batch_data = torch.stack(batch_data).to(self.device) 
             batch_embedding = model(batch_data).detach().cpu().numpy()
             video_embedding.append(batch_embedding)
 
@@ -178,6 +179,12 @@ class ModelHandler:
     return video_embedding
   
   def calculate_fvd(self, actual_frames: np.ndarray, predicted_frames: np.ndarray) -> float:
+    """fvd 계산
+    
+    param:
+      actual_frames: F * W * H * C
+      predicted_frames: F * W * H * C
+    """
     video1_embedding = self.create_inception_embedding(actual_frames)
     video2_embedding = self.create_inception_embedding(predicted_frames)
 
@@ -191,13 +198,13 @@ class ModelHandler:
     image: np.ndarray, 
     video_frames: np.ndarray, 
   ) -> float:
-    assert image.shape == video_frames.shape[1:], "Shapes of actual_frames and predicted_frames must be the same"
-
-    # 프레임별로 변환된 이미지들을 리스트로 얻습니다.
-    # frames_list = self.extract_frames_from_video(video_path)
+    """aed 계산
     
-    # 리스트의 길이(프레임 수)를 확인해봅니다.
-    # print("총 프레임 수:", len(frames_list))
+    param:
+      image: W * H * C
+      video_frames: F * W * H * C
+    """
+    assert image.shape == video_frames.shape[1:], "Shapes of actual_frames and predicted_frames must be the same"
 
     def calculate_euclidean_distance(image1, image2):
       diff = np.subtract(image1, image2)
@@ -208,11 +215,6 @@ class ModelHandler:
 
     def calculate_average_euclidean_distance(image, frames_list):
       total_distance = 0.0
-
-      # 리스트의 첫 번째 이미지를 기준 이미지로 설정합니다.
-      # reference_image = cv2.imread(path)
-      # resized_image = cv2.resize(reference_image, (pixel, pixel))
-      # resized_image_rgb = cv2.cvtColor(resized_image, cv2.COLOR_BGR2RGB)  # OpenCV의 BGR 형식을 RGB로 변환
       
       for frame in frames_list:
           distance = calculate_euclidean_distance(image, frame)
@@ -227,30 +229,29 @@ class ModelHandler:
     aed = calculate_average_euclidean_distance(image, video_frames)
     
     return float(aed)
-
-  def _calculate_psnr(self, original: np.ndarray , generated: np.ndarray):
-    mse = np.mean((original - generated) ** 2)
-    max_pixel = np.max(original)
-    psnr = 20 * np.log10(max_pixel / np.sqrt(mse))
-    return psnr
   
   def calculate_psnr(
     self, 
-    actual_frames: np.ndarray, 
     predicted_frames: np.ndarray
   ) -> float:    
-    # Calculate PSNR for each frame pair
-    # Make sure the shapes of actual_frames and predicted_frames are the same
-    assert actual_frames.shape[1:] == predicted_frames.shape[1:], "Shapes of actual_frames and predicted_frames must be the same"
+    """psnr 계산
+    
+    param:
+      predicted_frames: F * W * H * C
+    """
+    def _calculate_psnr(pred: np.ndarray , next: np.ndarray):
+      mse = np.mean((pred - next) ** 2)
+      max_pixel = np.max(pred)
+      psnr = 20 * np.log10(max_pixel / np.sqrt(mse))
+      return psnr
 
-    num_frames = actual_frames.shape[0]
-
     # Calculate PSNR for each frame pair
+    num_frames = predicted_frames.shape[0]
     psnr_total = 0.0
-    for i in range(num_frames):
-        actual_frame = actual_frames[i]
-        predicted_frame = predicted_frames[i]
-        psnr_value = self._calculate_psnr(actual_frame, predicted_frame)
+    for i in range(num_frames - 1):
+        pred_frame = predicted_frames[i]
+        next_frame = predicted_frames[i + 1]
+        psnr_value = _calculate_psnr(pred_frame, next_frame)
         psnr_total += psnr_value
 
     # Calculate average PSNR for the video pair
