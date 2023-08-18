@@ -20,9 +20,9 @@ class ModelHandler:
       raise Exception("You must use Python 3 or higher. Recommended version is Python 3.9")
 
     self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    self.config_path = '/workspace/model_file/config/vox-256.yaml'
-    self.checkpoint_path = '/workspace/model_file/weights/vox.pth.tar'
-    self.inception_path = '/workspace/model_file/weights/inception_v3.pth'
+    self.config_path = 'model_file/config/vox-256.yaml'
+    self.checkpoint_path = 'model_file/weights/vox.pth.tar'
+    self.inception_path = 'model_file/weights/inception_v3.pth'
     self.transform = transforms.Compose([
         transforms.ToTensor(),
         transforms.Resize((299, 299)),

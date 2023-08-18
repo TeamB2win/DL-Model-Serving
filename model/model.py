@@ -27,6 +27,13 @@ class DLModelHandler(ModelHandler):
   def initialize(self):
     settings = get_app_setting()
     
+    # 초기 모델 세팅 위치 변경
+    self.model_dir = settings.model_dir
+
+    self.config_path = os.path.join(self.model_dir, self.config_path)
+    self.checkpoint_path = os.path.join(self.model_dir, self.checkpoint_path)
+    self.inception_path = os.path.join(self.model_dir, self.inception_path)
+
     self.dataset_name = 'vox' # ['vox', 'taichi', 'ted', 'mgif']
     self.predict_mode = 'relative' # ['standard', 'relative', 'avd']
     self.best_frame = True  # when use the relative mode to animate a face, use 'find_best_frame=True' can get better quality result
@@ -38,7 +45,7 @@ class DLModelHandler(ModelHandler):
     self.inpainting, self.kp_detector, self.dense_motion_network, self.avd_network = self.load_checkpoints()
     
     # 비디오 파일 생성을 위한 Driving video paths
-    self.driving_root = '/workspace/model_file/driving_videos'
+    self.driving_root = os.path.join(self.model_dir, 'model_file/driving_videos')
     self.video_paths = [os.path.join(self.driving_root, file_name) for file_name in os.listdir(self.driving_root)]
 
     # 저장할 위치
@@ -210,7 +217,7 @@ class DLModelHandler(ModelHandler):
     ret['driving_video'] = driving_video_paths[best_idx]
     ret['video'] = video_path
         
-    result_path = os.path.join('/workspace/result_logs', f'{data.id}_result.txt')    
+    result_path = os.path.join(self.model_dir, 'result_logs', f'{data.id}_result.txt')    
     with open(result_path, 'w') as file:
       import json
       file.write(json.dumps(performance, indent='\t'))

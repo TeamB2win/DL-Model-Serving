@@ -3,6 +3,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class AppSetting(BaseSettings):
+  model_dir: str
   backend_url: str
   video_dir: str
   working_dir: str
